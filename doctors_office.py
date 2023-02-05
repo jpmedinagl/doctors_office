@@ -55,13 +55,16 @@ class Patient:
 
     === Private Attributes ===
     _id_patient: The id of a specific patient.
-    _primary_doctor_id: The primary doctors id.
+    _primary_doctor_id: The primary doctor's id.
+    _cancellations: The number of times this patient has cancelled an
+        appointment.
 
     === Representation Invariants ===
     """
     name: str
     _id_patient: int
     _primary_doctor_id: int
+    _cancellations: int
 
     def __init__(self, name: str, id_patient: int, primary_doctor_id: int) \
             -> None:
@@ -75,15 +78,28 @@ class Patient:
         self.name = name
         self._id_patient = id_patient
         self._primary_doctor_id = primary_doctor_id
+        self._cancellations = 0
 
     def get_id(self) -> int:
-        """Get a patients private id.
+        """Return a patients private id.
 
         >>> jp = Patient('Jp', 1, 2)
         >>> jp.get_id()
         1
         """
         return self._id_patient
+
+    def get_primary_doctor(self) -> int:
+        """Return this patient's primary doctor's id.
+        """
+        return self._primary_doctor_id
+
+    def get_cancellation_num(self) -> int:
+        """Return this patients number of times they have cancelled an
+        appointment.
+
+        """
+        return self._cancellations
 
     def change_primary_doctor(self, new_primary_doctor: int) -> None:
         """Change a patients primary doctor id with <new_primary_doctor>.
@@ -108,6 +124,9 @@ class DoctorOffice:
     _doctors: The doctors that are part of this office.
         Each key is a doctor's ID and its value is the Doctor object
         representing them.
+    _patients: The patients that are part of this office.
+        Each key is a patient's ID and its value is the Patient object
+        representing them.
     _schedule: The schedule of appointments at this office.
         Each key is a date and time and its value is a nested dictionary
         describing the appointments that start then. In the nested dictionary,
@@ -121,7 +140,8 @@ class DoctorOffice:
     """
     name: str
     _doctors: dict[int, Doctor]
-    _schedule: dict[datetime, dict[str, tuple[Doctor, Optional[Patient]]]]
+    _patients: dict[int, Patient]
+    _schedule: dict[datetime, dict[str, list[Doctor, Optional[Patient]]]]
 
     def __init__(self, name: str) -> None:
         """Initialize a Doctor's Office.
@@ -200,14 +220,79 @@ class DoctorOffice:
 
         if room_name not in self._schedule[time_point] \
                 and self._is_doc_available(time_point, doctor_id):
-            app_tuple = (doctor, None)
-            self._schedule[time_point][room_name] = app_tuple
+            app = [doctor, None]
+            self._schedule[time_point][room_name] = app
             return True
 
         if len(self._schedule[time_point]) == 0:
             self._schedule.pop(time_point)
         return False
 
-    def book_patient(self, time_point: datetime, patient: Patient) -> bool:
-        
+    def _is_doc_scheduled(self, time_point: datetime, doctor_id: int) -> None:
+        """Return whether a doctor with <doctor_id> has an appointment at
+        <time_point>.
+
+        >>> office = DoctorOffice('Medina Inc.')
+        >>> nick = Doctor('Nick', 1)
+        >>> jp = Patient('Jp', 1, 1)
+        >>> office.add_doctor(nick)
+        True
+        >>> feb_3_2023_12_00 = datetime(2023, 2, 3, 12, 0)
+        >>> office._is_doc_scheduled(feb_3_2023_12_00, 1)
+        False
+        >>> office.schedule_doctor_availability(feb_3_2023_12_00, 1, 'A101')
+        True
+        >>> office._is_doc_scheduled(feb_3_2023_12_00, 1)
+        True
+        """
         pass
+
+    def book_patient(self, time_point: datetime, patient: Patient) -> bool:
+        """Book a <patient> at <time_point> iff: there is a doctor available
+        at this <time_point> and <patient> is not already booked into another
+        appointment at <time_point>.
+
+        A patient will preferably be booked with their primary doctor, if their
+        primary doctor is not available, they will see another doctor available
+        at this time.
+
+        Return False if no doctors are available at this <time_point>.
+
+        >>> office = DoctorOffice('Medina Inc.')
+        >>> nick = Doctor('Nick', 1)
+        >>> jp = Patient('Jp', 1, 1)
+        >>> office.add_doctor(nick)
+        True
+        >>> feb_3_2023_12_00 = datetime(2023, 2, 3, 12, 0)
+        >>> office.book_patient(feb_3_2023_12_00, jp)
+        False
+        >>> office.schedule_doctor_availability(feb_3_2023_12_00, 1, 'A')
+        True
+        >>> office.book_patient(feb_3_2023_12_00, jp)
+        True
+        """
+        primary_id = patient.get_primary_doctor()
+        doc_availability = self._is_doc_scheduled(time_point, primary_id)
+        available_appointment_rooms = {}
+
+        if time_point not in self._schedule:
+            return False
+
+        for room, info in self._schedule[time_point].items():
+            doctor_id = info[DOCTOR].get_id()
+            app_patient = info[PATIENT]
+
+            if patient != app_patient:
+                available_appointment_rooms[doctor_id] = room
+
+        if doc_availability:
+            room = available_appointment_rooms[primary_id]
+        else:
+            doctors = list(available_appointment_rooms.keys())
+            room = available_appointment_rooms[doctors[0]]
+
+        if len(available_appointment_rooms) > 0:
+            self._schedule[time_point][room][PATIENT] = patient
+            return True
+        return False
+
