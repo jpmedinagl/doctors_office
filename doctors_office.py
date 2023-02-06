@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
+from doctors_office_utilities import create_appointment_dict, in_week
 
 DOCTOR = 0
 PATIENT = 1
@@ -23,28 +24,40 @@ class Doctor:
 
     === Private Attributes ===
     _id_doctor: The doctor's id.
+    _office: The doctor's office room name.
 
     === Representation Invariants ===
 
     """
     name: str
     _id_doctor: int
+    _office: str
 
-    def __init__(self, name: str, id_doc: int) -> None:
+    def __init__(self, name: str, id_doc: int, office: str) -> None:
         """Initialize a doctor with <name> and <id_doc>.
 
         """
         self.name = name
         self._id_doctor = id_doc
+        self._office = office
 
     def get_id(self) -> int:
-        """Get a doctor's private id.
+        """Return a doctor's private id.
 
-        >>> jp = Doctor('Jp', 1, 2)
+        >>> jp = Doctor('Jp', 1, '201')
         >>> jp.get_id()
         1
         """
         return self._id_doctor
+
+    def get_office(self) -> str:
+        """Return the doctor's office.
+
+        >>> jp = Doctor('Jp', 1, '201')
+        >>> jp.get_office()
+        '201'
+        """
+        return self._office
 
 
 class Patient:
@@ -141,7 +154,7 @@ class DoctorOffice:
     name: str
     _doctors: dict[int, Doctor]
     _patients: dict[int, Patient]
-    _schedule: dict[datetime, dict[str, list[Doctor, Optional[Patient]]]]
+    _schedule: dict[datetime, dict[str, tuple[Doctor, Optional[Patient]]]]
 
     def __init__(self, name: str) -> None:
         """Initialize a Doctor's Office.
@@ -152,6 +165,7 @@ class DoctorOffice:
         """
         self.name = name
         self._doctors = {}
+        self._patients = {}
         self._schedule = {}
 
     def add_doctor(self, doctor: Doctor) -> bool:
@@ -167,6 +181,18 @@ class DoctorOffice:
             return True
         return False
 
+    def add_patient(self, patient: Patient) -> bool:
+        """Add a new <patient> to this office iff the <patient> does not have
+        the same id as another patient in this office.
+
+        Return True iff the patient has been added to the office.
+        """
+        new_id = patient.get_id()
+        if new_id not in self._patients:
+            self._patients[new_id] = patient
+            return True
+        return False
+
     def _is_doc_available(self, time_point: datetime, doctor_id: int) -> bool:
         """Return whether doctor with <doctor_id> is available at <time_point>.
 
@@ -174,13 +200,13 @@ class DoctorOffice:
         other appointments at this time.
 
         >>> office = DoctorOffice('Medina Inc.')
-        >>> nick = Doctor('Nick', 1)
+        >>> nick = Doctor('Nick', 1, 'A')
         >>> office.add_doctor(nick)
         True
         >>> feb_3_2023_12_00 = datetime(2023, 2, 3, 12, 0)
         >>> office._is_doc_available(feb_3_2023_12_00, 1)
         True
-        >>> office.schedule_doctor_availability(feb_3_2023_12_00, 1, 'A')
+        >>> office.schedule_doctor_availability(feb_3_2023_12_00, 1)
         True
         >>> office._is_doc_available(feb_3_2023_12_00, 1)
         False
@@ -196,61 +222,58 @@ class DoctorOffice:
         return True
 
     def schedule_doctor_availability(self, time_point: datetime,
-                                     doctor_id: int, room_name: str) -> bool:
+                                     doctor_id: int) -> bool:
         """Add a doctors availability to this office at <time_point> iff:
         the doctor with <doctor_id> is not already in an appointment at this
-        time, and the room with <room_name> is not already being used for
-        another appointment at this time.
+        time.
 
         Preconditions:
             - The Doctor with doctor_id is a doctor in this office.
 
         >>> office = DoctorOffice('Medina Inc.')
-        >>> nick = Doctor('Nick', 1)
+        >>> nick = Doctor('Nick', 1, 'A')
         >>> office.add_doctor(nick)
         True
         >>> feb_3_2023_12_00 = datetime(2023, 2, 3, 12, 0)
-        >>> office.schedule_doctor_availability(feb_3_2023_12_00, 1, 'A101')
+        >>> office.schedule_doctor_availability(feb_3_2023_12_00, 1)
         True
         """
         doctor = self._doctors[doctor_id]
+        office_name = doctor.get_office()
 
         if time_point not in self._schedule:
             self._schedule[time_point] = {}
 
-        if room_name not in self._schedule[time_point] \
-                and self._is_doc_available(time_point, doctor_id):
-            app = [doctor, None]
-            self._schedule[time_point][room_name] = app
+        if self._is_doc_available(time_point, doctor_id):
+            app = (doctor, None)
+            self._schedule[time_point][office_name] = app
             return True
 
         if len(self._schedule[time_point]) == 0:
             self._schedule.pop(time_point)
         return False
 
-    def _is_doc_scheduled(self, time_point: datetime, doctor_id: int) -> None:
-        """Return whether a doctor with <doctor_id> has an appointment at
-        <time_point>.
+    def _schedule_with_other_doctor(
+            self, time_point: datetime, available_app: list, patient: Patient) \
+            -> None:
+        """Schedule <patient> with another doctor at <time_point> that is not
+        their primary doctor.
 
-        >>> office = DoctorOffice('Medina Inc.')
-        >>> nick = Doctor('Nick', 1)
-        >>> jp = Patient('Jp', 1, 1)
-        >>> office.add_doctor(nick)
-        True
-        >>> feb_3_2023_12_00 = datetime(2023, 2, 3, 12, 0)
-        >>> office._is_doc_scheduled(feb_3_2023_12_00, 1)
-        False
-        >>> office.schedule_doctor_availability(feb_3_2023_12_00, 1, 'A101')
-        True
-        >>> office._is_doc_scheduled(feb_3_2023_12_00, 1)
-        True
+        Precondition:
+            - available_app must be a list of available appointment rooms and
+            must be greater than 0
+
         """
-        pass
+        room = available_app[0]
+        doctor = self._schedule[time_point][room][DOCTOR]
+        app_tuple = (doctor, patient)
+        self._schedule[time_point][room] = app_tuple
 
     def book_patient(self, time_point: datetime, patient: Patient) -> bool:
         """Book a <patient> at <time_point> iff: there is a doctor available
-        at this <time_point> and <patient> is not already booked into another
-        appointment at <time_point>.
+        at this <time_point>, <patient> is not already booked into another
+        appointment at <time_point>, and <patient> is a patient registered in
+        this office.
 
         A patient will preferably be booked with their primary doctor, if their
         primary doctor is not available, they will see another doctor available
@@ -258,41 +281,233 @@ class DoctorOffice:
 
         Return False if no doctors are available at this <time_point>.
 
+        Preconditions: a single doctor is available at this <time_point>
+
         >>> office = DoctorOffice('Medina Inc.')
-        >>> nick = Doctor('Nick', 1)
+        >>> nick = Doctor('Nick', 1, '202')
         >>> jp = Patient('Jp', 1, 1)
+        >>> office.add_patient(jp)
+        True
         >>> office.add_doctor(nick)
         True
         >>> feb_3_2023_12_00 = datetime(2023, 2, 3, 12, 0)
         >>> office.book_patient(feb_3_2023_12_00, jp)
         False
-        >>> office.schedule_doctor_availability(feb_3_2023_12_00, 1, 'A')
+        >>> office.schedule_doctor_availability(feb_3_2023_12_00, 1)
         True
         >>> office.book_patient(feb_3_2023_12_00, jp)
         True
         """
         primary_id = patient.get_primary_doctor()
-        doc_availability = self._is_doc_scheduled(time_point, primary_id)
-        available_appointment_rooms = {}
+        available_appointments = []
 
         if time_point not in self._schedule:
             return False
 
         for room, info in self._schedule[time_point].items():
             doctor_id = info[DOCTOR].get_id()
-            app_patient = info[PATIENT]
 
-            if patient != app_patient:
-                available_appointment_rooms[doctor_id] = room
+            if doctor_id == primary_id and info[PATIENT] is None and \
+                    patient in self._patients:
+                doctor = info[DOCTOR]
+                app_tuple = (doctor, patient)
+                self._schedule[time_point][room] = app_tuple
+                return True
 
-        if doc_availability:
-            room = available_appointment_rooms[primary_id]
-        else:
-            doctors = list(available_appointment_rooms.keys())
-            room = available_appointment_rooms[doctors[0]]
+            if info[PATIENT] is None:
+                available_appointments.append(room)
 
-        if len(available_appointment_rooms) > 0:
-            self._schedule[time_point][room][PATIENT] = patient
+        if len(available_appointments) > 0:
+            self._schedule_with_other_doctor(
+                time_point, available_appointments, patient)
             return True
         return False
 
+    def cancel_appointment(self, time_point: datetime, patient: Patient) -> \
+            bool:
+        """Cancel a <patient>'s appointment at <time_point>.
+
+        >>> office = DoctorOffice('Medina Inc.')
+        >>> nick = Doctor('Nick', 1, '202')
+        >>> jp = Patient('Jp', 1, 1)
+        >>> office.add_patient(jp)
+        True
+        >>> office.add_doctor(nick)
+        True
+        >>> feb_3_2023_12_00 = datetime(2023, 2, 3, 12, 0)
+        >>> office.schedule_doctor_availability(feb_3_2023_12_00, 1)
+        True
+        >>> office.book_patient(feb_3_2023_12_00, jp)
+        True
+        >>> office.cancel_appointment(feb_3_2023_12_00, jp)
+        True
+        >>> office.book_patient(feb_3_2023_12_00, jp)
+        True
+        """
+        if time_point not in self._schedule:
+            return False
+
+        for room in self._schedule[time_point]:
+            info = self._schedule[time_point][room]
+            if info[PATIENT].get_id() == patient.get_id():
+                doctor = info[DOCTOR]
+                app_tuple = (doctor, None)
+                self._schedule[time_point][room] = app_tuple
+                return True
+        return False
+
+    def _is_doctor_name_unique(self, doctor: Doctor) -> bool:
+        """Return True iff the name of <doctor> is used by <= 1 doctor
+        in the Office.
+
+        >>> office = DoctorOffice('Medina Inc.')
+        >>> nick_1 = Doctor('Nick', 1, '202')
+        >>> office.add_doctor(nick_1)
+        True
+        >>> office._is_doctor_name_unique(nick_1)
+        True
+        >>> nick_2 = Doctor('Nick', 2, '203')
+        >>> office.add_doctor(nick_2)
+        True
+        >>> office._is_doctor_name_unique(nick_1)
+        False
+        """
+        doc_name = doctor.name
+        doc_id = doctor.get_id()
+        for ids in self._doctors:
+            if doc_id != ids and self._doctors[ids].name == doc_name:
+                return False
+        return True
+
+    def appointments_at(self, time_point: datetime) -> \
+            list[dict[str, str | int]]:
+        """Return a list of dictionaries, each representing an available
+        appointment at <time_point>.
+
+        Each dictionary must have the following keys and values:
+            'Date': the weekday and date of the class as a string, in the format
+                'Weekday, year-month-day' (e.g., 'Monday, 2022-11-07')
+            'Time': the time of the class, in the format 'HH:MM' where
+                HH uses 24-hour time (e.g., '15:00')
+            'Room': the name of the room
+            'Doctor': the name of the doctor
+                If there are multiple doctors with the same name, the name
+                should be followed by the doctor ID in parentheses
+                e.g., "Nick (1)"
+            'Patient': the patient's name or None if there is no booked patient
+
+        The appointments should be sorted by room name, in alphabetical
+        ascending order.
+
+        If there are no offerings, return empty list.
+
+        >>> office = DoctorOffice('Medina Inc.')
+        >>> nick = Doctor('Nick', 1, 'A10')
+        >>> sara = Doctor('Sara', 2, 'A11')
+        >>> office.add_doctor(nick)
+        True
+        >>> office.add_doctor(sara)
+        True
+        >>> feb_3_2023_12_00 = datetime(2023, 2, 3, 12, 0)
+        >>> office.schedule_doctor_availability(feb_3_2023_12_00, 1)
+        True
+        >>> office.schedule_doctor_availability(feb_3_2023_12_00, 2)
+        True
+        >>> jp = Patient('Jp', 2, 1)
+        >>> lauren = Patient('Lauren', 3, 2)
+        >>> office.add_patient(jp)
+        True
+        >>> office.add_patient(lauren)
+        True
+        >>> office.book_patient(feb_3_2023_12_00, jp)
+        True
+        >>> office.book_patient(feb_3_2023_12_00, lauren)
+        True
+        >>> office.appointments_at(feb_3_2023_12_00) == [
+        ... {'Date': 'Friday, 2023-02-03', 'Time': '12:00', 'Room': 'A10',
+        ... 'Doctor': 'Nick', 'Patient': 'Jp'},
+        ... {'Date': 'Friday, 2023-02-03', 'Time': '12:00', 'Room': 'A11',
+        ... 'Doctor': 'Sara', 'Patient': 'Lauren'}
+        ... ]
+        True
+        """
+        if time_point not in self._schedule:
+            return []
+
+        date = time_point.strftime('%A, %Y-%m-%d')
+        time = time_point.strftime('%H:%M')
+        appointments_of_day = self._schedule[time_point]
+        appointments = []
+
+        for room, info in appointments_of_day.items():
+            unique = self._is_doctor_name_unique(info[DOCTOR])
+            doc_name = info[DOCTOR].name
+            patient_name = info[PATIENT].name
+
+            if not unique:
+                doc_name += ' (' + str(info[DOCTOR].get_id()) + ')'
+
+            appointment = create_appointment_dict(
+                date, time, room, doc_name, patient_name)
+            appointments.append(appointment)
+
+        appointments = sorted(appointments, key=lambda k: k['Room'])
+        return appointments
+
+    def to_schedule_list(self, week: datetime = None) -> \
+            list[dict[str, str | int]]:
+        """Return a list of dictionaries for the Office's entire schedule, with
+        each dictionary representing an appointment.
+
+        The dictionaries should be in the list in ascending order by their date
+        and time (not the string representation of the date and time).
+        Appointments occurring at exactly the same date and time should
+        be in alphabetical order based on their room names.
+
+        If <week> is specified, only return the events that occur between the
+        date interval (between a Monday 0:00 and Sunday 23:59) that contains
+        <week>.
+
+        >>> office = DoctorOffice('Medina Inc.')
+        >>> nick = Doctor('Nick', 1, 'A10')
+        >>> sara = Doctor('Sara', 2, 'A11')
+        >>> office.add_doctor(nick)
+        True
+        >>> office.add_doctor(sara)
+        True
+        >>> feb_3_2023_12_00 = datetime(2023, 2, 3, 12, 0)
+        >>> feb_2_2023_12_00 = datetime(2023, 2, 2, 12, 0)
+        >>> office.schedule_doctor_availability(feb_3_2023_12_00, 1)
+        True
+        >>> office.schedule_doctor_availability(feb_2_2023_12_00, 2)
+        True
+        >>> jp = Patient('Jp', 2, 1)
+        >>> lauren = Patient('Lauren', 3, 2)
+        >>> office.add_patient(jp)
+        True
+        >>> office.add_patient(lauren)
+        True
+        >>> office.book_patient(feb_3_2023_12_00, jp)
+        True
+        >>> office.book_patient(feb_2_2023_12_00, lauren)
+        True
+        >>> office.to_schedule_list() == [
+        ... {'Date': 'Thursday, 2023-02-02', 'Time': '12:00', 'Room': 'A11',
+        ... 'Doctor': 'Sara', 'Patient': 'Lauren'},
+        ... {'Date': 'Friday, 2023-02-03', 'Time': '12:00', 'Room': 'A10',
+        ... 'Doctor': 'Nick', 'Patient': 'Jp'}
+        ... ]
+        True
+        """
+        full_schedule = []
+        time_points = sorted(list(self._schedule.keys()))
+
+        for time_point in time_points:
+            if in_week(time_point, week):
+                full_schedule.extend(self.appointments_at(time_point))
+        return full_schedule
+
+
+if __name__ == '__main__':
+    import doctest
+    doctest.testmod()
