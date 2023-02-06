@@ -17,7 +17,7 @@ PATIENT = 1
 
 
 class Doctor:
-    """
+    """A Doctor in the office.
 
     === Public Attributes ===
     name: Name of the doctor.
@@ -140,7 +140,7 @@ class Patient:
 
 
 class DoctorOffice:
-    """
+    """A Doctor Office.
 
     === Public Attributes ===
     name: The name of the Doctor Office.
