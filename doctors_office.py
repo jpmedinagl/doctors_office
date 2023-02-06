@@ -114,6 +114,18 @@ class Patient:
         """
         return self._cancellations
 
+    def update_cancellations(self) -> None:
+        """Update the number of cancellations this patient has made.
+
+        >>> jp = Patient('Jp', 1, 2)
+        >>> jp.get_cancellation_num()
+        0
+        >>> jp.update_cancellations()
+        >>> jp.get_cancellation_num()
+        1
+        """
+        self._cancellations += 1
+
     def change_primary_doctor(self, new_primary_doctor: int) -> None:
         """Change a patients primary doctor id with <new_primary_doctor>.
 
@@ -323,24 +335,29 @@ class DoctorOffice:
             return True
         return False
 
-    def cancel_appointment(self, time_point: datetime, patient: Patient) -> \
-            bool:
+    def cancel_appointment_patient(self,
+                                   time_point: datetime,
+                                   patient: Patient) -> bool:
         """Cancel a <patient>'s appointment at <time_point>.
 
         >>> office = DoctorOffice('Medina Inc.')
         >>> nick = Doctor('Nick', 1, '202')
         >>> jp = Patient('Jp', 1, 1)
-        >>> office.add_patient(jp)
-        True
         >>> office.add_doctor(nick)
+        True
+        >>> office.add_patient(jp)
         True
         >>> feb_3_2023_12_00 = datetime(2023, 2, 3, 12, 0)
         >>> office.schedule_doctor_availability(feb_3_2023_12_00, 1)
         True
         >>> office.book_patient(feb_3_2023_12_00, jp)
         True
-        >>> office.cancel_appointment(feb_3_2023_12_00, jp)
+        >>> jp.get_cancellation_num()
+        0
+        >>> office.cancel_appointment_patient(feb_3_2023_12_00, jp)
         True
+        >>> jp.get_cancellation_num()
+        1
         >>> office.book_patient(feb_3_2023_12_00, jp)
         True
         """
@@ -353,8 +370,81 @@ class DoctorOffice:
                 doctor = info[DOCTOR]
                 app_tuple = (doctor, None)
                 self._schedule[time_point][room] = app_tuple
+                patient.update_cancellations()
+
+                if patient.get_cancellation_num() == 10:
+                    self._patients.pop(patient.get_id())
                 return True
         return False
+
+    def _book_cancelled_patient(self, time_point: datetime,
+                                patient: Patient) -> bool:
+        """Return True if patient who has had appointment cancelled by a doctor
+        is booked at the earliest time possible with any doctor available.
+
+        Return False if patient is not able to be booked.
+
+        >>> office = DoctorOffice('Medina Inc.')
+        >>> sara = Doctor('Sara', 2, '202')
+        >>> jp = Patient('Jp', 1, 1)
+        >>> office.add_doctor(sara)
+        True
+        >>> office.add_patient(jp)
+        True
+        >>> feb_3_2023_12_00 = datetime(2023, 2, 3, 12, 0)
+        >>> feb_4_2023_12_00 = datetime(2023, 2, 3, 12, 0)
+        >>> office.schedule_doctor_availability(feb_4_2023_12_00, 2)
+        True
+        >>> office._book_cancelled_patient(feb_3_2023_12_00, jp)
+        True
+        """
+        dates = sorted([date for date in self._schedule.keys()
+                        if time_point <= date])
+
+        for date in dates:
+            for room, info in self._schedule[date].items():
+                if info[PATIENT] is None and patient.get_id() in self._patients:
+                    doctor = info[DOCTOR]
+                    app_tuple = (doctor, patient)
+                    self._schedule[time_point][room] = app_tuple
+                    return True
+        return False
+
+    def cancel_appointment_doctor(self, time_point: datetime, doctor: Doctor) \
+            -> bool:
+        """Cancel a <doctor>'s appointment at <time_point>.
+
+        Return True if the patient has been succesfully booked with another
+        doctor at the next available time.
+
+        >>> office = DoctorOffice('Medina Inc.')
+        >>> nick = Doctor('Nick', 1, '202')
+        >>> jp = Patient('Jp', 1, 1)
+        >>> office.add_doctor(nick)
+        True
+        >>> office.add_patient(jp)
+        True
+        >>> feb_3_2023_12_00 = datetime(2023, 2, 3, 12, 0)
+        >>> office.schedule_doctor_availability(feb_3_2023_12_00, 1)
+        True
+        >>> office.book_patient(feb_3_2023_12_00, jp)
+        True
+        >>> office.cancel_appointment_doctor(feb_3_2023_12_00, nick)
+        False
+        """
+        if time_point not in self._schedule:
+            return False
+
+        for room in self._schedule[time_point]:
+            info = self._schedule[time_point][room]
+            if doctor.get_id() == info[DOCTOR].get_id():
+                self._schedule[time_point].pop(room)
+                if len(self._schedule[time_point]) == 0:
+                    self._schedule.pop(time_point)
+
+                booked_other_doctor = \
+                    self._book_cancelled_patient(time_point, info[PATIENT])
+                return booked_other_doctor
 
     def _is_doctor_name_unique(self, doctor: Doctor) -> bool:
         """Return True iff the name of <doctor> is used by <= 1 doctor
